@@ -34,6 +34,15 @@ static Baudrate baudrates[] =
 	{ .baud = 2000000, .baud_mask = B2000000 }
 };
 
+typedef struct
+{
+	int baud;
+	int cs;
+	int parity;
+	int stopbits;
+	char *port;
+} SerialConnInfo;
+
 static int baudrate_mask(int baud)
 {
 	for(int i = 0; i < (int)ARRLEN(baudrates); ++i)
@@ -69,9 +78,14 @@ static void thread_notify(Serial *serial)
 	write(serial->fdc[1], "0", 1);
 }
 
-static void serial_connect(Serial *serial, char *port)
+static void serial_connect(Serial *serial, SerialConnInfo *info)
 {
-	msg_push(&serial->sendq, MSG_CONNECT, port, strlen(port));
+	int len = strlen(info->port) + 1;
+	char *port = smalloc(len);
+	memcpy(port, info->port, len);
+	info->port = port;
+
+	msg_push(&serial->sendq, MSG_CONNECT, info, sizeof(*info));
 	thread_notify(serial);
 }
 
@@ -93,23 +107,27 @@ static void serial_shutdown(Serial *serial)
 	thread_notify(serial);
 }
 
-static void serial_disconnected(Serial *serial, char *port)
+static void serial_disconnected(Serial *serial, SerialConnInfo *info)
 {
-	term_print(&term, COLOR_MSG, "Closed port %s", port);
+	term_print(&term, COLOR_MSG, "Closed port %s", info->port);
+	sfree(info->port);
+	info->port = NULL;
 	msg_push(&serial->readq, MSG_DISCONNECTED, NULL, 0);
 	gfx_notify();
 }
 
-static void serial_connected(Serial *serial, char *port)
+static void serial_connected(Serial *serial, SerialConnInfo *info)
 {
-	term_print(&term, COLOR_MSG, "Opened port %s", port);
+	term_print(&term, COLOR_MSG, "Opened port %s - %d baud %d%c%d",
+		info->port, info->baud, info->cs, info->parity, info->stopbits);
 	msg_push(&serial->readq, MSG_CONNECTED, NULL, 0);
 	gfx_notify();
 }
 
 static void *thread_serial(void *arg)
 {
-	char port[256];
+	SerialConnInfo info;
+	memset(&info, 0, sizeof(info));
 	Serial *serial = arg;
 	int fd = -1;
 	int cfd = serial->fdc[0];
@@ -142,13 +160,17 @@ static void *thread_serial(void *arg)
 					switch(msg->Type)
 					{
 					case MSG_CONNECT:
-						strcpy(port, msg->Data);
+						memcpy(&info, msg->Data, sizeof(SerialConnInfo));
+
+						printf("%s\n", info.port);
+
 						struct termios tty;
 
-						if((fd = open(port, O_RDWR | O_NOCTTY | O_SYNC)) < 0)
+						if((fd = open(info.port, O_RDWR | O_NOCTTY | O_SYNC)) < 0)
 						{
 							term_print(&term, COLOR_MSG, "Failed to open port %s (%d) - %s",
-								port, errno, strerror(errno));
+								info.port, errno, strerror(errno));
+							gfx_notify();
 							break;
 						}
 
@@ -157,11 +179,12 @@ static void *thread_serial(void *arg)
 							close(fd);
 							fd = -1;
 							term_print(&term, COLOR_MSG, "Failed to open port %s (%d) - %s",
-								port, errno, strerror(errno));
+								info.port, errno, strerror(errno));
+							gfx_notify();
 							break;
 						}
 
-						int speed = baudrate_mask(9600);
+						int speed = baudrate_mask(info.baud);
 						cfsetospeed(&tty, speed);
 						cfsetispeed(&tty, speed);
 						tty.c_lflag = 0;
@@ -170,23 +193,48 @@ static void *thread_serial(void *arg)
 						tty.c_cc[VTIME] = 0;
 						tty.c_iflag &= ~(IGNBRK | IXON | IXOFF | IXANY);
 						tty.c_cflag &= ~(CSIZE | PARENB | PARODD | CSTOPB | CRTSCTS);
-						tty.c_cflag |= (CLOCAL | CREAD | CS8);
+						tty.c_cflag |= (CLOCAL | CREAD);
+
+						if(info.parity == 'E')
+						{
+							tty.c_cflag |= PARENB;
+						}
+						else if(info.parity == 'O')
+						{
+							tty.c_cflag |= PARENB | PARODD;
+						}
+
+						if(info.stopbits == 2)
+						{
+							tty.c_cflag |= CSTOPB;
+						}
+
+						if(info.cs == 7)
+						{
+							tty.c_cflag |= CS7;
+						}
+						else if(info.cs == 8)
+						{
+							tty.c_cflag |= CS8;
+						}
+
 						if(tcsetattr(fd, TCSANOW, &tty))
 						{
 							close(fd);
 							fd = -1;
 							term_print(&term, COLOR_MSG, "Failed to open port %s (%d) - %s",
-								port, errno, strerror(errno));
+								info.port, errno, strerror(errno));
+							gfx_notify();
 							break;
 						}
 
-						serial_connected(serial, port);
+						serial_connected(serial, &info);
 						break;
 
 					case MSG_DISCONNECT:
 						if(fd >= 0)
 						{
-							serial_disconnected(serial, port);
+							serial_disconnected(serial, &info);
 							close(fd);
 							fd = -1;
 						}
@@ -201,7 +249,7 @@ static void *thread_serial(void *arg)
 									errno, strerror(errno));
 								close(fd);
 								fd = -1;
-								serial_disconnected(serial, port);
+								serial_disconnected(serial, &info);
 							}
 						}
 						break;
@@ -209,6 +257,11 @@ static void *thread_serial(void *arg)
 					case MSG_SHUTDOWN:
 						if(fd >= 0)
 						{
+							if(info.port)
+							{
+								sfree(info.port);
+							}
+
 							close(fd);
 							fd = -1;
 							running = 0;
@@ -226,6 +279,7 @@ static void *thread_serial(void *arg)
 				if(n > 0)
 				{
 					term_append(&term, buf, n);
+					gfx_notify();
 				}
 				else
 				{
@@ -233,7 +287,7 @@ static void *thread_serial(void *arg)
 						errno, strerror(errno));
 					close(fd);
 					fd = -1;
-					serial_disconnected(serial, port);
+					serial_disconnected(serial, &info);
 				}
 			}
 		}

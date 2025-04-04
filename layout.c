@@ -352,7 +352,16 @@ static void button_stopbits_click(Element *e)
 static void button_port_open_click(Element *e)
 {
 	Button *b = (Button *)e;
-	serial_connect(&serial, b->Text);
+	SerialConnInfo info =
+	{
+		.baud = baudrate,
+		.cs = cs,
+		.parity = parity,
+		.stopbits = stopbits,
+		.port = b->Text
+	};
+
+	serial_connect(&serial, &info);
 }
 
 static void layout_connected(void)

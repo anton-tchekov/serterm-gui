@@ -19,7 +19,7 @@ static void queue_init(Queue *queue)
 	pthread_mutex_init(&queue->Mutex, NULL);
 }
 
-static void msg_push(Queue *queue, int type, char *data, int len)
+static void msg_push(Queue *queue, int type, void *data, int len)
 {
 	Message *msg = smalloc(sizeof(Message) + len + 1);
 	msg->Type = type;
