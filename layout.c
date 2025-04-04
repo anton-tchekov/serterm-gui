@@ -7,15 +7,8 @@
 #define DEV_STR_MAX  512
 #define BAUD_STR_MAX  16
 
-typedef struct
-{
-	int fd;
-} SerialThreadArgs;
-
 static Terminal term;
 static int ports_list_start = 0;
-static int fd = -1;
-static pthread_t thread;
 static char input_text[1024];
 static char input_save_text[64] = "log.txt";
 static char input_suffix_text[32] = "\\n";
@@ -30,6 +23,7 @@ static int stopbits = 1;
 static char button_stopbits_text[2] = "1";
 static int parity = 'N';
 static char button_parity_text[2] = "N";
+static Serial serial;
 
 static void button_close_click(Element *e);
 static void button_clear_click(Element *e);
@@ -266,6 +260,20 @@ static void buttons_baud_hide(void)
 
 static void input_send_enter(Element *e)
 {
+	if(input_send.Length == 0)
+	{
+		return;
+	}
+
+	char buf[sizeof(input_text)];
+	int rv = escseq(input_send.Text, input_send.Length, buf);
+	if(rv < 0)
+	{
+		term_print(&term, COLOR_MSG, "Invalid escape sequence");
+		return;
+	}
+
+	serial_send(&serial, buf, rv);
 	(void)e;
 }
 
@@ -330,103 +338,18 @@ static void button_stopbits_click(Element *e)
 	button_stopbits_text[0] = stopbits + '0';
 	(void)e;
 }
-
+/*
 static void serial_error(char *file)
 {
 	term_print(&term, COLOR_MSG, "Failed to open serial port %s (Error %d)", file, errno);
 	term_print(&term, COLOR_MSG, "%s", strerror(errno));
 }
-
-static void *thread_recv(void *arg)
-{
-#if 0
-	int ifd = -1;
-	SerialThreadArgs *args = arg;
-	int cfd = args->fd;
-	for(;;)
-	{
-		fd_set rfds;
-		FD_ZERO(&rfds);
-		FD_SET(cfd, &rfds);
-		if(ifd >= 0)
-		{
-			FD_SET(ifd, &rfds);
-		}
-
-		int ret = select(1, &rfds, NULL, NULL, NULL);
-		if(ret == -1)
-		{
-			perror("select()");
-			break;
-		}
-		else if(ret)
-		{
-			if(FD_ISSET(cfd, &rfds))
-			{
-				// Discard read
-				char buf[32];
-				read(cfd, buf, sizeof(buf));
-				if(args->fd < 0)
-				{
-					close(ifd);
-				}
-
-				ifd = args->fd;
-				/*if(shutdown)
-				{
-					break;
-				}*/
-			}
-			else if(ifd >= 0 && FD_ISSET(ifd, &rfds))
-			{
-
-			}
-		}
-	}
-#endif
-
-	(void)arg;
-	return NULL;
-}
-
+	term_print(&term, COLOR_MSG, "Closed port");
+*/
 static void button_port_open_click(Element *e)
 {
 	Button *b = (Button *)e;
-	char *name = b->Text;
-	struct termios tty;
-
-	if((fd = open(name, O_RDWR | O_NOCTTY | O_SYNC)) < 0)
-	{
-		serial_error(name);
-		return;
-	}
-
-	if(tcgetattr(fd, &tty))
-	{
-		close(fd);
-		serial_error(name);
-		return;
-	}
-
-	int speed = baudrate_mask(baudrate);
-	cfsetospeed(&tty, speed);
-	cfsetispeed(&tty, speed);
-	tty.c_lflag = 0;
-	tty.c_oflag = 0;
-	tty.c_cc[VMIN]  = 1;
-	tty.c_cc[VTIME] = 0;
-	tty.c_iflag &= ~(IGNBRK | IXON | IXOFF | IXANY);
-	tty.c_cflag &= ~(CSIZE | PARENB | PARODD | CSTOPB | CRTSCTS);
-	tty.c_cflag |= (CLOCAL | CREAD | CS8);
-	if(tcsetattr(fd, TCSANOW, &tty))
-	{
-		close(fd);
-		serial_error(name);
-		return;
-	}
-
-	term_print(&term, COLOR_MSG, "Opened Port %s - %d baud %d%c%d",
-		name, baudrate, cs, parity, stopbits);
+	serial_connect(&serial, b->Text);
 
 	input_send.Flags &= ~FLAG_INVISIBLE;
 	label_send.Flags &= ~FLAG_INVISIBLE;
@@ -582,13 +505,7 @@ static void layout_resize(void)
 
 static void button_close_click(Element *e)
 {
-	if(fd < 0)
-	{
-		return;
-	}
-
-	close(fd);
-
+	serial_disconnect(&serial);
 
 	input_send.Flags |= FLAG_INVISIBLE;
 	label_send.Flags |= FLAG_INVISIBLE;
@@ -610,17 +527,12 @@ static void button_close_click(Element *e)
 	label_params.Flags &= ~FLAG_INVISIBLE;
 
 	ports_show();
-
-	term_print(&term, COLOR_MSG, "Closed port");
 	(void)e;
 }
 
 static void layout_init(void)
 {
-	if(pthread_create(&thread, NULL, thread_recv, NULL))
-	{
-		exit(1);
-	}
+	serial_init(&serial);
 
 	Button button_b =
 	{
@@ -665,6 +577,7 @@ static void layout_init(void)
 
 static void layout_destroy(void)
 {
+	serial_shutdown(&serial);
 	for(int i = btn_baud_start; i < btn_baud_end; ++i)
 	{
 		Button *b = elems[i];

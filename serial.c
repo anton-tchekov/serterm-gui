@@ -1,31 +1,3 @@
-/*
-void *thread_recv(void *arg)
-{
-	uint8_t buf[1024];
-	int fd, n;
-
-	fd = *(int *)arg;
-	for(;;)
-	{
-		n = read(fd, buf, sizeof(buf));
-		if(n < 0)
-		{
-			fprintf(stderr, "(read) Error %d: %s\n", errno, strerror(errno));
-			exit(1);
-		}
-		else if(n == 0)
-		{
-			fprintf(stderr, "(read) Disconnected\n");
-			break;
-		}
-
-		write(STDOUT_FILENO, buf, n);
-	}
-
-	return NULL;
-}
-
-*/
 
 typedef struct
 {
@@ -73,4 +45,186 @@ static int baudrate_mask(int baud)
 	}
 
 	return 0;
+}
+
+enum
+{
+	MSG_CONNECT,
+	MSG_SEND,
+	MSG_DISCONNECT,
+	MSG_SHUTDOWN,
+	MSG_CONNECTED,
+	MSG_DISCONNECTED,
+	MSG_RECEIVED,
+	MSG_INFO
+};
+
+typedef struct
+{
+	int fdc[2];
+	Queue sendq;
+	pthread_t thread;
+} Serial;
+
+static void thread_notify(Serial *serial)
+{
+	write(serial->fdc[1], "0", 1);
+}
+
+static void serial_connect(Serial *serial, char *port)
+{
+	msg_push(&serial->sendq, MSG_CONNECT, port, strlen(port));
+	thread_notify(serial);
+}
+
+static void serial_send(Serial *serial, char *str, int len)
+{
+	printf(">>>>> AAA!!!!\n");
+	msg_push(&serial->sendq, MSG_SEND, str, len);
+	printf(">>>>> BBB!!!!\n");
+	thread_notify(serial);
+	printf(">>>>> CCC!!!!\n");
+}
+
+static void serial_disconnect(Serial *serial)
+{
+	msg_push(&serial->sendq, MSG_DISCONNECT, NULL, 0);
+	thread_notify(serial);
+}
+
+static void serial_shutdown(Serial *serial)
+{
+	msg_push(&serial->sendq, MSG_SHUTDOWN, NULL, 0);
+	thread_notify(serial);
+}
+
+static void *thread_serial(void *arg)
+{
+	Serial *serial = arg;
+	int fd = -1;
+	int cfd = serial->fdc[0];
+	for(;;)
+	{
+		fd_set rfds;
+		FD_ZERO(&rfds);
+		FD_SET(cfd, &rfds);
+		if(fd >= 0)
+		{
+			FD_SET(fd, &rfds);
+		}
+
+		int ret = select((cfd > fd ? cfd : fd) + 1, &rfds, NULL, NULL, NULL);
+		if(ret == -1)
+		{
+			perror("select()");
+			break;
+		}
+		else if(ret)
+		{
+			if(FD_ISSET(cfd, &rfds))
+			{
+				char buf[32];
+				read(cfd, buf, sizeof(buf));
+				Message *msg;
+				printf(">>>>> herer!!!!\n");
+				while((msg = msg_pop(&serial->sendq)))
+				{
+					printf(">>>>>>>>>>>>> sdasd\n");
+					switch(msg->Type)
+					{
+					case MSG_CONNECT:
+						char *name = msg->Data;
+						struct termios tty;
+
+						if((fd = open(name, O_RDWR | O_NOCTTY | O_SYNC)) < 0)
+						{
+							//serial_error(name);
+							break;
+						}
+
+						if(tcgetattr(fd, &tty))
+						{
+							close(fd);
+							fd = -1;
+							//serial_error(name);
+							break;
+						}
+
+						int speed = baudrate_mask(9600);
+						cfsetospeed(&tty, speed);
+						cfsetispeed(&tty, speed);
+						tty.c_lflag = 0;
+						tty.c_oflag = 0;
+						tty.c_cc[VMIN]  = 1;
+						tty.c_cc[VTIME] = 0;
+						tty.c_iflag &= ~(IGNBRK | IXON | IXOFF | IXANY);
+						tty.c_cflag &= ~(CSIZE | PARENB | PARODD | CSTOPB | CRTSCTS);
+						tty.c_cflag |= (CLOCAL | CREAD | CS8);
+						if(tcsetattr(fd, TCSANOW, &tty))
+						{
+							close(fd);
+							fd = -1;
+							//serial_error(name);
+							break;
+						}
+
+
+						printf("CONN\n");
+						//term_print(&term, COLOR_MSG, "Opened Port %s - %d baud %d%c%d",
+						//	name, baudrate, cs, parity, stopbits);
+						break;
+
+					case MSG_DISCONNECT:
+						if(fd >= 0)
+						{
+							// info
+							printf("DISCONN\n");
+							close(fd);
+							fd = -1;
+						}
+						break;
+
+					case MSG_SEND:
+						break;
+
+					case MSG_SHUTDOWN:
+						if(fd >= 0)
+						{
+							close(fd);
+							fd = -1;
+						}
+						return NULL;
+					}
+
+					sfree(msg);
+				}
+			}
+			else if(fd >= 0 && FD_ISSET(fd, &rfds))
+			{
+				printf("RECV\n");
+				char buf[1024];
+				int n = read(fd, buf, sizeof(buf));
+				printf("%.*s", n, buf);
+			}
+		}
+	}
+
+	(void)arg;
+	return NULL;
+}
+
+static void serial_init(Serial *serial)
+{
+	if(pipe(serial->fdc) < 0)
+	{
+		fprintf(stderr, "Failed to create pipe\n");
+		exit(1);
+	}
+
+	queue_init(&serial->sendq);
+	if(pthread_create(&serial->thread, NULL, thread_serial, serial))
+	{
+		fprintf(stderr, "Failed to start serial port thread\n");
+		exit(1);
+	}
 }

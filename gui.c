@@ -3,7 +3,6 @@
 #define FLAG_ALIGN_LEFT       0x00
 #define FLAG_ALIGN_CENTER     0x01
 #define FLAG_ALIGN_RIGHT      0x02
-#define FLAG_PASSWORD         0x10
 #define FLAG_INVERTED         0x20
 #define FLAG_INVISIBLE        0x40
 
@@ -244,12 +243,6 @@ static void button_render(Button *b, u32 flags)
 		inner_color);
 }
 
-static const char *input_get_display_text(Input *i)
-{
-	static const char _password_stars[] = "***********************************";
-	return i->Flags & FLAG_PASSWORD ? _password_stars : i->Text;
-}
-
 static void input_render(Input *i, u32 flags)
 {
 	if(i->Flags & FLAG_INVISIBLE)
@@ -259,8 +252,6 @@ static void input_render(Input *i, u32 flags)
 
 	u32 inner_color;
 	i32 y = i->Y;
-
-	const char *text = input_get_display_text(i);
 
 	inner_color = (flags & (FLAG_SELECTED | FLAG_HOVER)) ?
 		theme_cur->ElementSelBG : theme_cur->ElementBG;
@@ -286,39 +277,37 @@ static void input_render(Input *i, u32 flags)
 	if(i->Selection == i->Position)
 	{
 		font_string_len(i->X + INPUT_PADDING_X, y + INPUT_PADDING_Y,
-			text, i->Length,
+			i->Text, i->Length,
 			theme_cur->ColorFG,
 			inner_color);
 	}
 	else
 	{
-		i32 sel_start, sel_len, sel_x;
-
-		sel_start = i32_min(i->Selection, i->Position);
-		sel_len = i32_max(i->Selection, i->Position) - sel_start;
+		i32 sel_start = i32_min(i->Selection, i->Position);
+		i32 sel_len = i32_max(i->Selection, i->Position) - sel_start;
 
 		font_string_len(i->X + INPUT_PADDING_X,
 			y + INPUT_PADDING_Y,
-			text, sel_start,
+			i->Text, sel_start,
 			theme_cur->ColorFG,
 			inner_color);
 
-		sel_x = font_string_width_len(text, sel_start);
+		i32 sel_x = font_string_width_len(i->Text, sel_start);
 
 		gfx_rect(i->X + INPUT_PADDING_X + sel_x, y + CURSOR_OFFSET_Y,
-			font_string_width_len(text + sel_start, sel_len),
+			font_string_width_len(i->Text + sel_start, sel_len),
 			CURSOR_HEIGHT,
 			theme_cur->ColorFG);
 
 		font_string_len(i->X + INPUT_PADDING_X + sel_x, y + INPUT_PADDING_Y,
-			text + sel_start, sel_len,
+			i->Text + sel_start, sel_len,
 			theme_cur->ColorTextSelFG,
 			theme_cur->ColorTextSelBG);
 
 		font_string_len(i->X + INPUT_PADDING_X +
-			font_string_width_len(text, sel_start + sel_len),
+			font_string_width_len(i->Text, sel_start + sel_len),
 			y + INPUT_PADDING_Y,
-			text + sel_start + sel_len,
+			i->Text + sel_start + sel_len,
 			i->Length - sel_start - sel_len,
 			theme_cur->ColorFG,
 			inner_color);
@@ -327,7 +316,7 @@ static void input_render(Input *i, u32 flags)
 	if(flags & FLAG_SELECTED)
 	{
 		gfx_rect(i->X + INPUT_PADDING_X +
-			font_string_width_len(text, i->Position) +
+			font_string_width_len(i->Text, i->Position) +
 			CURSOR_OFFSET_X,
 			i->Y + CURSOR_OFFSET_Y,
 			CURSOR_WIDTH,
@@ -345,17 +334,14 @@ void input_clear(Input *i)
 
 static void input_selection_replace(Input *i, const char *str, i32 len)
 {
-	const char *text;
 	i32 sel_start, sel_len, w_new, w_start, w_end;
 
 	sel_start = i32_min(i->Selection, i->Position);
 	sel_len = i32_max(i->Selection, i->Position) - sel_start;
 
-	text = input_get_display_text(i);
-
 	w_new = font_string_width_len(str, len);
-	w_start = font_string_width_len(text, sel_start);
-	w_end = font_string_width_len(text + sel_start + sel_len,
+	w_start = font_string_width_len(i->Text, sel_start);
+	w_end = font_string_width_len(i->Text + sel_start + sel_len,
 		i->Length - sel_start - sel_len);
 
 	if(w_new + w_start + w_end >= i->W - 2 * INPUT_PADDING_X)

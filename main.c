@@ -21,6 +21,8 @@
 #include "kbd.c"
 #include "gfx.c"
 #include "gui.c"
+#include "escseq.c"
+#include "queue.c"
 #include "serial.c"
 #include "terminal.c"
 #include "layout.c"
@@ -78,6 +80,41 @@ int main(void)
 		case SDL_MOUSEMOTION:
 			gui_mousemove(e.motion.x, e.motion.y);
 			break;
+
+/*
+	u32 time;
+	int x, y;
+
+	_down = 1;
+	SDL_GetMouseState(&x, &y);
+	time = SDL_GetTicks();
+	x /= _char_width;
+	y /= _line_height;
+	if(time < _triple_click + DBL_CLICK_MS)
+	{
+		_dbl_click = 0;
+		_triple_click = 0;
+		event_tripleclick(x, y);
+	}
+	else if(time < _dbl_click + DBL_CLICK_MS)
+	{
+		_triple_click = _dbl_click;
+		_dbl_click = 0;
+		event_dblclick(x, y);
+	}
+	else
+	{
+		_dbl_click = time;
+		const u8 *state = SDL_GetKeyboardState(NULL);
+		if(state[SDL_SCANCODE_LSHIFT] || state[SDL_SCANCODE_RSHIFT])
+		{
+			event_shift_mousedown(x, y);
+		}
+		else
+		{
+			event_mousedown(x, y);
+		}
+	}*/
 
 		case SDL_MOUSEBUTTONDOWN:
 			if(e.button.button != SDL_BUTTON_LEFT) { break; }

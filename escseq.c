@@ -1,5 +1,6 @@
 static int escseq(char *in, int len, char *out)
 {
+	int o = 0;
 	for(int i = 0; i < len; ++i)
 	{
 		int c = in[i];
@@ -11,7 +12,7 @@ static int escseq(char *in, int len, char *out)
 				return -1;
 			}
 
-			c = buf[i];
+			c = in[i];
 			switch(c)
 			{
 			case 'a': e = '\a'; break;
