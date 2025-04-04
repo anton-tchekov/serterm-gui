@@ -2,6 +2,7 @@ typedef struct MESSAGE
 {
 	struct MESSAGE *Prev, *Next;
 	int Type;
+	int Len;
 	char Data[];
 } Message;
 
@@ -20,20 +21,13 @@ static void queue_init(Queue *queue)
 
 static void msg_push(Queue *queue, int type, char *data, int len)
 {
-	printf("########## push\n");
-
 	Message *msg = smalloc(sizeof(Message) + len + 1);
 	msg->Type = type;
 	msg->Prev = NULL;
+	msg->Len = len;
 	memcpy(msg->Data, data, len);
 	msg->Data[len] = '\0';
-
-	printf("########## lol\n");
-
 	pthread_mutex_lock(&queue->Mutex);
-
-	printf("########## in\n");
-
 	if(!queue->Last)
 	{
 		queue->Last = msg;
@@ -47,8 +41,6 @@ static void msg_push(Queue *queue, int type, char *data, int len)
 
 	queue->First = msg;
 	pthread_mutex_unlock(&queue->Mutex);
-
-	printf("########## out\n");
 }
 
 static Message *msg_pop(Queue *queue)

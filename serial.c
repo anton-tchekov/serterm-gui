@@ -62,7 +62,7 @@ enum
 typedef struct
 {
 	int fdc[2];
-	Queue sendq;
+	Queue sendq, readq;
 	pthread_t thread;
 } Serial;
 
@@ -79,11 +79,8 @@ static void serial_connect(Serial *serial, char *port)
 
 static void serial_send(Serial *serial, char *str, int len)
 {
-	printf(">>>>> AAA!!!!\n");
 	msg_push(&serial->sendq, MSG_SEND, str, len);
-	printf(">>>>> BBB!!!!\n");
 	thread_notify(serial);
-	printf(">>>>> CCC!!!!\n");
 }
 
 static void serial_disconnect(Serial *serial)
@@ -98,8 +95,39 @@ static void serial_shutdown(Serial *serial)
 	thread_notify(serial);
 }
 
+static void serial_info(Serial *serial, char *msg, ...)
+{
+	va_list args;
+	va_start(args, msg);
+	char buf[256];
+	int len = vsnprintf(buf, sizeof(buf), msg, args);
+	va_end(args);
+	msg_push(&serial->readq, MSG_INFO, buf, len);
+	gfx_notify();
+}
+
+static void serial_recv(Serial *serial, char *msg, int len)
+{
+	msg_push(&serial->readq, MSG_RECEIVED, msg, len);
+	gfx_notify();
+}
+
+static void serial_disconnected(Serial *serial, char *port, int len)
+{
+	msg_push(&serial->readq, MSG_DISCONNECTED, port, len);
+	gfx_notify();
+}
+
+static void serial_connected(Serial *serial, char *port, int len)
+{
+	msg_push(&serial->readq, MSG_CONNECTED, port, len);
+	gfx_notify();
+}
+
 static void *thread_serial(void *arg)
 {
+	char port[256];
+	int port_len;
 	Serial *serial = arg;
 	int fd = -1;
 	int cfd = serial->fdc[0];
@@ -117,7 +145,7 @@ static void *thread_serial(void *arg)
 		if(ret == -1)
 		{
 			perror("select()");
-			break;
+			exit(1);
 		}
 		else if(ret)
 		{
@@ -126,17 +154,16 @@ static void *thread_serial(void *arg)
 				char buf[32];
 				read(cfd, buf, sizeof(buf));
 				Message *msg;
-				printf(">>>>> herer!!!!\n");
 				while((msg = msg_pop(&serial->sendq)))
 				{
-					printf(">>>>>>>>>>>>> sdasd\n");
 					switch(msg->Type)
 					{
 					case MSG_CONNECT:
-						char *name = msg->Data;
+						strcpy(port, msg->Data);
+						port_len = msg->Len;
 						struct termios tty;
 
-						if((fd = open(name, O_RDWR | O_NOCTTY | O_SYNC)) < 0)
+						if((fd = open(port, O_RDWR | O_NOCTTY | O_SYNC)) < 0)
 						{
 							//serial_error(name);
 							break;
@@ -168,23 +195,32 @@ static void *thread_serial(void *arg)
 							break;
 						}
 
-
-						printf("CONN\n");
-						//term_print(&term, COLOR_MSG, "Opened Port %s - %d baud %d%c%d",
+						//serial_info(&serial, "Opened Port %s - %d baud %d%c%d",
 						//	name, baudrate, cs, parity, stopbits);
+						serial_connected(serial, port, msg->Len);
 						break;
 
 					case MSG_DISCONNECT:
 						if(fd >= 0)
 						{
-							// info
-							printf("DISCONN\n");
+							serial_disconnected(serial, port, port_len);
 							close(fd);
 							fd = -1;
 						}
 						break;
 
 					case MSG_SEND:
+						if(fd >= 0)
+						{
+							if(write(fd, msg->Data, msg->Len) != msg->Len)
+							{
+								serial_info(serial, "Send failed (%d) - %s",
+									errno, strerror(errno));
+								close(fd);
+								fd = -1;
+								serial_disconnected(serial, port, port_len);
+							}
+						}
 						break;
 
 					case MSG_SHUTDOWN:
@@ -201,10 +237,20 @@ static void *thread_serial(void *arg)
 			}
 			else if(fd >= 0 && FD_ISSET(fd, &rfds))
 			{
-				printf("RECV\n");
 				char buf[1024];
 				int n = read(fd, buf, sizeof(buf));
-				printf("%.*s", n, buf);
+				if(n > 0)
+				{
+					serial_recv(serial, buf, n);
+				}
+				else
+				{
+					serial_info(serial, "Read failed (%d) - %s",
+						errno, strerror(errno));
+					close(fd);
+					fd = -1;
+					serial_disconnected(serial, port, port_len);
+				}
 			}
 		}
 	}
@@ -222,6 +268,7 @@ static void serial_init(Serial *serial)
 	}
 
 	queue_init(&serial->sendq);
+	queue_init(&serial->readq);
 	if(pthread_create(&serial->thread, NULL, thread_serial, serial))
 	{
 		fprintf(stderr, "Failed to start serial port thread\n");

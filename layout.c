@@ -265,15 +265,28 @@ static void input_send_enter(Element *e)
 		return;
 	}
 
-	char buf[sizeof(input_text)];
-	int rv = escseq(input_send.Text, input_send.Length, buf);
-	if(rv < 0)
+	char t0[sizeof(input_text)];
+	char t1[sizeof(input_suffix)];
+	char buf[sizeof(t0) + sizeof(t1)];
+
+	int r0 = escseq(input_send.Text, input_send.Length, t0);
+	if(r0 < 0)
 	{
-		term_print(&term, COLOR_MSG, "Invalid escape sequence");
+		term_print(&term, COLOR_MSG, "Invalid escape sequence in message");
 		return;
 	}
 
-	serial_send(&serial, buf, rv);
+	int r1 = escseq(input_suffix.Text, input_suffix.Length, t1);
+	if(r1 < 0)
+	{
+		term_print(&term, COLOR_MSG, "Invalid escape sequence in line ending");
+		return;
+	}
+
+	memcpy(buf, t0, r0);
+	memcpy(buf + r0, t1, r1);
+	serial_send(&serial, buf, r0 + r1);
+	input_clear(&input_send);
 	(void)e;
 }
 
@@ -294,9 +307,7 @@ static int cs_cycle(int v)
 {
 	switch(v)
 	{
-	case 5: return 6;
-	case 6: return 7;
-	case 8: return 5;
+	case 8: return 7;
 	}
 
 	return 8;

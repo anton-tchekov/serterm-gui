@@ -132,6 +132,42 @@ int main(void)
 				gui_event_key(key, key_to_codepoint(key), KEYSTATE_RELEASED);
 			}
 			break;
+
+		default:
+			if(e.type == gfx_notify_event)
+			{
+				Message *msg;
+				while((msg = msg_pop(&serial.readq)))
+				{
+					switch(msg->Type)
+					{
+					case MSG_RECEIVED:
+						term_print(&term, COLOR_WHITE, "%.*s", msg->Len, msg->Data);
+						break;
+
+					case MSG_DISCONNECTED:
+						gfx_set_title("Serial Terminal");
+						term_print(&term, COLOR_MSG, "Closed port %s", msg->Data);
+						break;
+
+					case MSG_CONNECTED:
+						{
+							char buf[256];
+							snprintf(buf, sizeof(buf), "Serial Terminal %s", msg->Data);
+							gfx_set_title(buf);
+							term_print(&term, COLOR_MSG, "Opened port %s", msg->Data);
+						}
+						break;
+
+					case MSG_INFO:
+						term_print(&term, COLOR_MSG, "%s", msg->Data);
+						break;
+					}
+
+					sfree(msg);
+				}
+			}
+			break;
 		}
 	}
 
