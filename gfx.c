@@ -266,6 +266,7 @@ static void gfx_rect_border(i32 x, i32 y, i32 w, i32 h, i32 border, u32 color)
 static void gfx_notify(void)
 {
 	SDL_Event e;
+	memset(&e, 0, sizeof(e));
 	e.type = gfx_notify_event;
 	SDL_PushEvent(&e);
 }

@@ -131,7 +131,8 @@ static void *thread_serial(void *arg)
 	Serial *serial = arg;
 	int fd = -1;
 	int cfd = serial->fdc[0];
-	for(;;)
+	int running = 1;
+	while(running)
 	{
 		fd_set rfds;
 		FD_ZERO(&rfds);
@@ -228,8 +229,9 @@ static void *thread_serial(void *arg)
 						{
 							close(fd);
 							fd = -1;
+							running = 0;
 						}
-						return NULL;
+						break;
 					}
 
 					sfree(msg);

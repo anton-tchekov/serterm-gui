@@ -94,5 +94,5 @@ static int escseq(char *in, int len, char *out)
 		out[o++] = e;
 	}
 
-	return 0;
+	return o;
 }
