@@ -349,19 +349,15 @@ static void button_stopbits_click(Element *e)
 	button_stopbits_text[0] = stopbits + '0';
 	(void)e;
 }
-/*
-static void serial_error(char *file)
-{
-	term_print(&term, COLOR_MSG, "Failed to open serial port %s (Error %d)", file, errno);
-	term_print(&term, COLOR_MSG, "%s", strerror(errno));
-}
-	term_print(&term, COLOR_MSG, "Closed port");
-*/
+
 static void button_port_open_click(Element *e)
 {
 	Button *b = (Button *)e;
 	serial_connect(&serial, b->Text);
+}
 
+static void layout_connected(void)
+{
 	input_send.Flags &= ~FLAG_INVISIBLE;
 	label_send.Flags &= ~FLAG_INVISIBLE;
 
@@ -514,10 +510,8 @@ static void layout_resize(void)
 	input_suffix.Y = input_send.Y;
 }
 
-static void button_close_click(Element *e)
+static void layout_disconnected(void)
 {
-	serial_disconnect(&serial);
-
 	input_send.Flags |= FLAG_INVISIBLE;
 	label_send.Flags |= FLAG_INVISIBLE;
 
@@ -538,6 +532,11 @@ static void button_close_click(Element *e)
 	label_params.Flags &= ~FLAG_INVISIBLE;
 
 	ports_show();
+}
+
+static void button_close_click(Element *e)
+{
+	serial_disconnect(&serial);
 	(void)e;
 }
 

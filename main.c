@@ -147,6 +147,7 @@ int main(void)
 
 					case MSG_DISCONNECTED:
 						gfx_set_title("Serial Terminal");
+						layout_disconnected();
 						term_print(&term, COLOR_MSG, "Closed port %s", msg->Data);
 						break;
 
@@ -156,6 +157,7 @@ int main(void)
 							snprintf(buf, sizeof(buf), "Serial Terminal %s", msg->Data);
 							gfx_set_title(buf);
 							term_print(&term, COLOR_MSG, "Opened port %s", msg->Data);
+							layout_connected();
 						}
 						break;
 

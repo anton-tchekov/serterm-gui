@@ -166,7 +166,8 @@ static void *thread_serial(void *arg)
 
 						if((fd = open(port, O_RDWR | O_NOCTTY | O_SYNC)) < 0)
 						{
-							//serial_error(name);
+							serial_info(serial, "Failed to open port %s (%d) - %s",
+								port, errno, strerror(errno));
 							break;
 						}
 
@@ -174,7 +175,8 @@ static void *thread_serial(void *arg)
 						{
 							close(fd);
 							fd = -1;
-							//serial_error(name);
+							serial_info(serial, "Failed to open port %s (%d) - %s",
+								port, errno, strerror(errno));
 							break;
 						}
 
@@ -192,7 +194,8 @@ static void *thread_serial(void *arg)
 						{
 							close(fd);
 							fd = -1;
-							//serial_error(name);
+							serial_info(serial, "Failed to open port %s (%d) - %s",
+								port, errno, strerror(errno));
 							break;
 						}
 

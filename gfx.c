@@ -84,8 +84,6 @@ static i32 font_load(char *fontfile, i32 size)
 	char_width = max_w;
 	char_height = max_h;
 
-	// printf("Char %d x %d\n", char_width, char_height);
-
 	SDL_Surface *surface = SDL_CreateRGBSurface(0,
 		char_width * 16, char_height * 8,
 		32, 0xff, 0xff00, 0xff0000, 0xff000000);
