@@ -34,6 +34,18 @@ static void *scalloc(size_t size)
 	return m;
 }
 
+static void *srealloc(void *data, size_t size)
+{
+	void *m = realloc(data, size);
+	if(!m)
+	{
+		fprintf(stderr, "Realloc of %zu bytes failed\n", size);
+		exit(1);
+	}
+
+	return m;
+}
+
 static void sfree(void *p)
 {
 	if(p)

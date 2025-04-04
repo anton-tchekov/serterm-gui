@@ -7,7 +7,6 @@
 #define DEV_STR_MAX  512
 #define BAUD_STR_MAX  16
 
-static Terminal term;
 static int ports_list_start = 0;
 static char input_text[1024];
 static char input_save_text[64] = "log.txt";

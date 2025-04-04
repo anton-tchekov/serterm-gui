@@ -23,8 +23,8 @@
 #include "gui.c"
 #include "escseq.c"
 #include "queue.c"
-#include "serial.c"
 #include "terminal.c"
+#include "serial.c"
 #include "layout.c"
 
 int main(void)
@@ -81,41 +81,6 @@ int main(void)
 			gui_mousemove(e.motion.x, e.motion.y);
 			break;
 
-/*
-	u32 time;
-	int x, y;
-
-	_down = 1;
-	SDL_GetMouseState(&x, &y);
-	time = SDL_GetTicks();
-	x /= _char_width;
-	y /= _line_height;
-	if(time < _triple_click + DBL_CLICK_MS)
-	{
-		_dbl_click = 0;
-		_triple_click = 0;
-		event_tripleclick(x, y);
-	}
-	else if(time < _dbl_click + DBL_CLICK_MS)
-	{
-		_triple_click = _dbl_click;
-		_dbl_click = 0;
-		event_dblclick(x, y);
-	}
-	else
-	{
-		_dbl_click = time;
-		const u8 *state = SDL_GetKeyboardState(NULL);
-		if(state[SDL_SCANCODE_LSHIFT] || state[SDL_SCANCODE_RSHIFT])
-		{
-			event_shift_mousedown(x, y);
-		}
-		else
-		{
-			event_mousedown(x, y);
-		}
-	}*/
-
 		case SDL_MOUSEBUTTONDOWN:
 			if(e.button.button != SDL_BUTTON_LEFT) { break; }
 			gui_mousedown(e.button.x, e.button.y);
@@ -141,14 +106,9 @@ int main(void)
 				{
 					switch(msg->Type)
 					{
-					case MSG_RECEIVED:
-						term_print(&term, COLOR_WHITE, "%.*s", msg->Len, msg->Data);
-						break;
-
 					case MSG_DISCONNECTED:
 						gfx_set_title("Serial Terminal");
 						layout_disconnected();
-						term_print(&term, COLOR_MSG, "Closed port %s", msg->Data);
 						break;
 
 					case MSG_CONNECTED:
@@ -156,13 +116,8 @@ int main(void)
 							char buf[256];
 							snprintf(buf, sizeof(buf), "Serial Terminal %s", msg->Data);
 							gfx_set_title(buf);
-							term_print(&term, COLOR_MSG, "Opened port %s", msg->Data);
 							layout_connected();
 						}
-						break;
-
-					case MSG_INFO:
-						term_print(&term, COLOR_MSG, "%s", msg->Data);
 						break;
 					}
 

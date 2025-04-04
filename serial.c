@@ -54,9 +54,7 @@ enum
 	MSG_DISCONNECT,
 	MSG_SHUTDOWN,
 	MSG_CONNECTED,
-	MSG_DISCONNECTED,
-	MSG_RECEIVED,
-	MSG_INFO
+	MSG_DISCONNECTED
 };
 
 typedef struct
@@ -95,39 +93,23 @@ static void serial_shutdown(Serial *serial)
 	thread_notify(serial);
 }
 
-static void serial_info(Serial *serial, char *msg, ...)
+static void serial_disconnected(Serial *serial, char *port)
 {
-	va_list args;
-	va_start(args, msg);
-	char buf[256];
-	int len = vsnprintf(buf, sizeof(buf), msg, args);
-	va_end(args);
-	msg_push(&serial->readq, MSG_INFO, buf, len);
+	term_print(&term, COLOR_MSG, "Closed port %s", port);
+	msg_push(&serial->readq, MSG_DISCONNECTED, NULL, 0);
 	gfx_notify();
 }
 
-static void serial_recv(Serial *serial, char *msg, int len)
+static void serial_connected(Serial *serial, char *port)
 {
-	msg_push(&serial->readq, MSG_RECEIVED, msg, len);
-	gfx_notify();
-}
-
-static void serial_disconnected(Serial *serial, char *port, int len)
-{
-	msg_push(&serial->readq, MSG_DISCONNECTED, port, len);
-	gfx_notify();
-}
-
-static void serial_connected(Serial *serial, char *port, int len)
-{
-	msg_push(&serial->readq, MSG_CONNECTED, port, len);
+	term_print(&term, COLOR_MSG, "Opened port %s", port);
+	msg_push(&serial->readq, MSG_CONNECTED, NULL, 0);
 	gfx_notify();
 }
 
 static void *thread_serial(void *arg)
 {
 	char port[256];
-	int port_len;
 	Serial *serial = arg;
 	int fd = -1;
 	int cfd = serial->fdc[0];
@@ -161,12 +143,11 @@ static void *thread_serial(void *arg)
 					{
 					case MSG_CONNECT:
 						strcpy(port, msg->Data);
-						port_len = msg->Len;
 						struct termios tty;
 
 						if((fd = open(port, O_RDWR | O_NOCTTY | O_SYNC)) < 0)
 						{
-							serial_info(serial, "Failed to open port %s (%d) - %s",
+							term_print(&term, COLOR_MSG, "Failed to open port %s (%d) - %s",
 								port, errno, strerror(errno));
 							break;
 						}
@@ -175,7 +156,7 @@ static void *thread_serial(void *arg)
 						{
 							close(fd);
 							fd = -1;
-							serial_info(serial, "Failed to open port %s (%d) - %s",
+							term_print(&term, COLOR_MSG, "Failed to open port %s (%d) - %s",
 								port, errno, strerror(errno));
 							break;
 						}
@@ -194,20 +175,18 @@ static void *thread_serial(void *arg)
 						{
 							close(fd);
 							fd = -1;
-							serial_info(serial, "Failed to open port %s (%d) - %s",
+							term_print(&term, COLOR_MSG, "Failed to open port %s (%d) - %s",
 								port, errno, strerror(errno));
 							break;
 						}
 
-						//serial_info(&serial, "Opened Port %s - %d baud %d%c%d",
-						//	name, baudrate, cs, parity, stopbits);
-						serial_connected(serial, port, msg->Len);
+						serial_connected(serial, port);
 						break;
 
 					case MSG_DISCONNECT:
 						if(fd >= 0)
 						{
-							serial_disconnected(serial, port, port_len);
+							serial_disconnected(serial, port);
 							close(fd);
 							fd = -1;
 						}
@@ -218,11 +197,11 @@ static void *thread_serial(void *arg)
 						{
 							if(write(fd, msg->Data, msg->Len) != msg->Len)
 							{
-								serial_info(serial, "Send failed (%d) - %s",
+								term_print(&term, COLOR_MSG, "Send failed (%d) - %s",
 									errno, strerror(errno));
 								close(fd);
 								fd = -1;
-								serial_disconnected(serial, port, port_len);
+								serial_disconnected(serial, port);
 							}
 						}
 						break;
@@ -246,15 +225,15 @@ static void *thread_serial(void *arg)
 				int n = read(fd, buf, sizeof(buf));
 				if(n > 0)
 				{
-					serial_recv(serial, buf, n);
+					term_append(&term, buf, n);
 				}
 				else
 				{
-					serial_info(serial, "Read failed (%d) - %s",
+					term_print(&term, COLOR_MSG, "Read failed (%d) - %s",
 						errno, strerror(errno));
 					close(fd);
 					fd = -1;
-					serial_disconnected(serial, port, port_len);
+					serial_disconnected(serial, port);
 				}
 			}
 		}

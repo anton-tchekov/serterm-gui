@@ -3,16 +3,26 @@ typedef struct TLINE
 	struct TLINE *next;
 	u32 color;
 	int len;
-	char text[];
+	int max;
+	char *text;
 } TLine;
 
 typedef struct
 {
-	TLine *first;
+	TLine *first, *append;
+	pthread_mutex_t mutex;
 } Terminal;
+
+static Terminal term;
+
+static void term_init(Terminal *term)
+{
+	pthread_mutex_init(&term->mutex, NULL);
+}
 
 static void term_draw(Terminal *term, i32 x, i32 y, i32 min_y)
 {
+	pthread_mutex_lock(&term->mutex);
 	TLine *cur = term->first;
 	while(y > min_y && cur)
 	{
@@ -20,16 +30,20 @@ static void term_draw(Terminal *term, i32 x, i32 y, i32 min_y)
 		font_string_len(x, y, cur->text, cur->len, cur->color, 0);
 		cur = cur->next;
 	}
+
+	pthread_mutex_unlock(&term->mutex);
 }
 
 static void term_print_va(Terminal *term, u32 color, const char *txt, va_list args)
 {
+	pthread_mutex_lock(&term->mutex);
 	va_list args2;
 	va_copy(args2, args);
-	size_t len = vsnprintf(NULL, 0, txt, args) + 1;
-	TLine *line = smalloc(sizeof(TLine) + len);
+	int len = vsnprintf(NULL, 0, txt, args);
+	TLine *line = smalloc(sizeof(TLine));
+	line->text = smalloc(len + 1);
 	line->len = len;
-	vsnprintf(line->text, len, txt, args2);
+	vsnprintf(line->text, len + 1, txt, args2);
 	va_end(args2);
 
 	line->color = color;
@@ -37,6 +51,7 @@ static void term_print_va(Terminal *term, u32 color, const char *txt, va_list ar
 	TLine *next = term->first;
 	term->first = line;
 	line->next = next;
+	pthread_mutex_unlock(&term->mutex);
 }
 
 static void term_print(Terminal *term, u32 color, const char *txt, ...)
@@ -47,25 +62,91 @@ static void term_print(Terminal *term, u32 color, const char *txt, ...)
 	va_end(args);
 }
 
+static void tline_append(TLine *line, int c)
+{
+	if(line->len >= line->max)
+	{
+		line->max *= 2;
+		line->text = srealloc(line->text, line->max);
+	}
+
+	line->text[line->len++] = c;
+}
+
+static void tline_new(Terminal *term)
+{
+	TLine *line = smalloc(sizeof(TLine));
+	line->max = 16;
+	line->len = 0;
+	line->text = smalloc(line->max);
+	line->color = COLOR_WHITE;
+
+	TLine *next = term->first;
+	term->first = line;
+	line->next = next;
+	term->append = line;
+}
+
+static void term_putchar(Terminal *term, int c)
+{
+	int first = 0;
+	if(c == '\r') { return; }
+
+	if(!term->append)
+	{
+		tline_new(term);
+		first = 1;
+	}
+
+	if(c == '\n')
+	{
+		if(!first)
+		{
+			tline_new(term);
+		}
+	}
+	else
+	{
+		tline_append(term->append, c);
+	}
+}
+
+static void term_append(Terminal *term, char *msg, int len)
+{
+	pthread_mutex_lock(&term->mutex);
+	for(int i = 0; i < len; ++i)
+	{
+		term_putchar(term, msg[i]);
+	}
+
+	pthread_mutex_unlock(&term->mutex);
+}
+
 static void term_clear(Terminal *term)
 {
+	pthread_mutex_lock(&term->mutex);
 	TLine *cur = term->first;
 	while(cur)
 	{
 		TLine *next = cur->next;
+		sfree(cur->text);
 		sfree(cur);
 		cur = next;
 	}
 
+	term->append = NULL;
 	term->first = NULL;
+	pthread_mutex_unlock(&term->mutex);
 }
 
 static void term_save(Terminal *term, char *filename)
 {
+	pthread_mutex_lock(&term->mutex);
 	FILE *fp = fopen(filename, "w");
 	if(!fp)
 	{
 		term_print(term, COLOR_MSG, "Failed to open file \"%s\" for writing", filename);
+		pthread_mutex_unlock(&term->mutex);
 		return;
 	}
 
@@ -75,10 +156,12 @@ static void term_save(Terminal *term, char *filename)
 		if(cur->color == 0xFFFFFFFF)
 		{
 			fwrite(cur->text, 1, cur->len, fp);
+			fputc('\n', fp);
 		}
 
 		cur = cur->next;
 	}
 
 	fclose(fp);
+	pthread_mutex_unlock(&term->mutex);
 }
