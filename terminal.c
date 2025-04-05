@@ -1,6 +1,6 @@
 typedef struct TLINE
 {
-	struct TLINE *next;
+	struct TLINE *next, *prev;
 	u32 color;
 	int len;
 	int max;
@@ -9,7 +9,7 @@ typedef struct TLINE
 
 typedef struct
 {
-	TLine *first, *append;
+	TLine *first, *append, *last;
 	pthread_mutex_t mutex;
 } Terminal;
 
@@ -49,6 +49,15 @@ static void term_print_va(Terminal *term, u32 color, const char *txt, va_list ar
 	line->color = color;
 
 	TLine *next = term->first;
+	if(next)
+	{
+		next->prev = line;
+	}
+	else
+	{
+		term->last = line;
+	}
+
 	term->first = line;
 	line->next = next;
 	pthread_mutex_unlock(&term->mutex);
@@ -82,6 +91,16 @@ static void tline_new(Terminal *term)
 	line->color = COLOR_WHITE;
 
 	TLine *next = term->first;
+	if(next)
+	{
+		next->prev = line;
+	}
+	else
+	{
+		term->last = line;
+	}
+
+	line->prev = NULL;
 	term->first = line;
 	line->next = next;
 	term->append = line;
@@ -136,6 +155,7 @@ static void term_clear(Terminal *term)
 
 	term->append = NULL;
 	term->first = NULL;
+	term->last = NULL;
 	pthread_mutex_unlock(&term->mutex);
 }
 
@@ -145,12 +165,12 @@ static void term_save(Terminal *term, char *filename)
 	FILE *fp = fopen(filename, "w");
 	if(!fp)
 	{
-		term_print(term, COLOR_MSG, "Failed to open file \"%s\" for writing", filename);
 		pthread_mutex_unlock(&term->mutex);
+		term_print(term, COLOR_MSG, "Failed to open file \"%s\" for writing", filename);
 		return;
 	}
 
-	TLine *cur = term->first;
+	TLine *cur = term->last;
 	while(cur)
 	{
 		if(cur->color == 0xFFFFFFFF)
@@ -159,7 +179,7 @@ static void term_save(Terminal *term, char *filename)
 			fputc('\n', fp);
 		}
 
-		cur = cur->next;
+		cur = cur->prev;
 	}
 
 	fclose(fp);
